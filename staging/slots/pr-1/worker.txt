@@ -1,0 +1,2 @@
+Cookie scan worker, version 1. Edit this file to make the next build produce a new image.
+built from f6da1ee
