@@ -1,5 +1,5 @@
 {
-  "service": "api (brand new one, try to release me)",
+  "service": "api",
   "commit": "__COMMIT__",
   "builtAt": "__BUILT_AT__"
 }
