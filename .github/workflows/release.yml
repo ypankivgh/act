@@ -1,0 +1,114 @@
+name: 4 · Release
+
+# WHEN   you run it, from main. `ref` defaults to main; for a hotfix, name its branch.
+# DOES   check ref → build → deploy to prod's preprod slot → `preprod` Shopify app.
+#        Check it there, then run Swap.
+# NEVER  touches prod's production slot (only Swap does), or ships a commit that is not on main
+#        or a hotfix/* branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to release.
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+# Shared with Swap: preprod is never replaced in the middle of a swap.
+concurrency:
+  group: prod
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - id: check
+        uses: ./.github/actions/release-check
+        with:
+          repo: ${{ github.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ github.token }}
+
+  build-api:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: ./.github/actions/build/api
+
+  build-web:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: ./.github/actions/build/web
+
+  build-worker:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      image: ${{ steps.worker.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - id: worker
+        uses: ./.github/actions/build/worker
+        with:
+          env: prod
+      - uses: ./.github/actions/azure/save
+        with:
+          message: build worker ${{ steps.worker.outputs.image }} into prod
+
+  deploy:
+    needs: [ check, build-api, build-web, build-worker ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Add a required reviewer to this environment (Settings → Environments) to make every release
+    # wait for an approval here.
+    environment:
+      name: preprod
+      url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/prod/slots/preprod/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - uses: ./.github/actions/deploy
+        with:
+          env: prod
+          slot: preprod
+          commit: ${{ needs.check.outputs.sha }}
+          worker-image: ${{ needs.build-worker.outputs.image }}
+      - uses: ./.github/actions/shopify
+        with:
+          app: preprod
+          commit: ${{ needs.check.outputs.sha }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: release ${{ needs.check.outputs.sha }} to prod/preprod

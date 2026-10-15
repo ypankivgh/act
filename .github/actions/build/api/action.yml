@@ -1,0 +1,25 @@
+name: Build API
+description: >-
+  Tests the checkout, then "builds" the API: version.json with the commit baked in, uploaded as the
+  artifact `api`. Nothing that fails the tests gets as far as an artifact.
+
+runs:
+  using: composite
+  steps:
+    - name: Test
+      shell: bash
+      run: bash app/test.sh
+
+    - name: Build
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/api"
+        sed -e "s/__COMMIT__/$(git rev-parse HEAD)/" -e "s/__BUILT_AT__/$(date -u +%FT%TZ)/" \
+          app/api/version.json >"$RUNNER_TEMP/api/version.json"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: api
+        path: ${{ runner.temp }}/api/
+        if-no-files-found: error

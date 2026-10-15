@@ -1,0 +1,172 @@
+name: 2 · PR
+
+# WHEN   a PR is opened, pushed to, marked ready, or closed (drafts are skipped)
+# DOES   slot pr-<N> up → build → deploy → point the `pr` Shopify app at it → comment the link.
+#        Each push repeats it; the slot's data survives. Closed (merged or not): slot down.
+# NEVER  touches prod or main data (--<name> names only, LOCKS)
+
+on:
+  pull_request:
+    types: [ opened, reopened, synchronize, ready_for_review, closed ]
+
+permissions:
+  contents: read
+
+# A newer push replaces a run still deploying the older one; closing the PR cancels both.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  SLOT: pr-${{ github.event.pull_request.number }}
+  COMMIT: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  up:
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      url: ${{ steps.slot.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            infrastructure
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - id: slot
+        uses: ./.github/actions/slot/up
+        with:
+          name: ${{ env.SLOT }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: slot up ${{ env.SLOT }}
+
+  build-api:
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+      - uses: ./.github/actions/build/api
+
+  build-web:
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+      - uses: ./.github/actions/build/web
+
+  build-worker:
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      image: ${{ steps.worker.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - id: worker
+        uses: ./.github/actions/build/worker
+        with:
+          env: staging
+      - uses: ./.github/actions/azure/save
+        with:
+          message: build worker ${{ steps.worker.outputs.image }} into staging
+
+  deploy:
+    needs: [ up, build-api, build-web, build-worker ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # One environment for every PR: the PR page shows "deployed to pr-preview" with a View button.
+    environment:
+      name: pr-preview
+      url: ${{ needs.up.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - uses: ./.github/actions/deploy
+        with:
+          env: staging
+          slot: ${{ env.SLOT }}
+          commit: ${{ env.COMMIT }}
+          worker-image: ${{ needs.build-worker.outputs.image }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: deploy staging/${{ env.SLOT }} ${{ env.COMMIT }}
+
+  shopify:
+    needs: [ up, deploy ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    # One `pr` Shopify app for every PR: deploys queue, and the last one owns it.
+    concurrency:
+      group: shopify-pr
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - uses: ./.github/actions/shopify
+        with:
+          app: pr
+          commit: ${{ env.COMMIT }}
+          url: ${{ needs.up.outputs.url }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: point shopify pr at ${{ env.SLOT }}
+      - name: Comment the link
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ needs.up.outputs.url }}
+        run: |
+          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --edit-last --create-if-none \
+            --body "Slot \`$SLOT\` runs \`${COMMIT:0:7}\`: $URL (Pages may take a minute)"
+
+  down:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - uses: ./.github/actions/slot/down
+        with:
+          name: ${{ env.SLOT }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: slot down ${{ env.SLOT }}

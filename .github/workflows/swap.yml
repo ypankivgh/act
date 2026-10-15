@@ -1,0 +1,54 @@
+name: 5 · Swap
+
+# WHEN   you run it, from main, after checking a release on preprod
+# DOES   preprod ↔ production (preprod checked first) → `prod` Shopify app → git tag prod-<time>
+#        on the commit now live. Run it again to roll back: preprod still holds the previous version.
+# NEVER  builds anything, or moves settings: settings.json stays with its slot, only code moves
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod
+  cancel-in-progress: false
+
+jobs:
+  swap:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push to _azure_, and the git tag
+    # Add a required reviewer to this environment (Settings → Environments) to make every swap wait
+    # for an approval here, and restrict it to main.
+    environment:
+      name: production
+      url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/prod/slots/production/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - id: swap
+        uses: ./.github/actions/swap
+      - uses: ./.github/actions/shopify
+        with:
+          app: prod
+          commit: ${{ steps.swap.outputs.commit }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: swap prod, production runs ${{ steps.swap.outputs.commit }}
+      # What a hotfix branches from.
+      - name: Tag the live commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ steps.swap.outputs.commit }}
+        run: |
+          tag="prod-$(date -u +%Y%m%d-%H%M%S)"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$COMMIT" --silent
+          echo "Tagged \`$COMMIT\` as $tag" >>"$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,63 @@
+name: Slot up
+description: >-
+  Creates a slot in staging, or does nothing that is already there. Always its data (a Cosmos
+  database, a SQL database and queues, all named --<name>); with compute, also the slot folder with
+  settings pointed at that data and the `pr` Shopify app. Gives slots settings, not code. Needs the
+  _azure_ branch at azure/; save afterwards.
+
+inputs:
+  name:
+    description: Slot name. Lowercase words joined by single hyphens, at most 8 characters.
+    required: true
+  compute:
+    description: "'true' for a PR (data and slot); 'false' for local development (data only)."
+    default: 'true'
+
+outputs:
+  url:
+    description: The slot's address (compute only).
+    value: ${{ steps.slot.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check the name
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        [[ $NAME =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#NAME} -le 8 && $NAME != production && $NAME != preprod ]] \
+          || { echo "::error::'$NAME' must be lowercase words joined by single hyphens, at most 8 characters"; exit 1; }
+
+    - name: Data
+      shell: bash
+      run: bash infrastructure/data.sh staging "${{ inputs.name }}"
+
+    - id: slot
+      name: Slot
+      if: inputs.compute == 'true'
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+        PAGES: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+      run: |
+        bash infrastructure/settings.sh staging "$NAME" pr
+        echo "url=$PAGES/staging/slots/$NAME/" >>"$GITHUB_OUTPUT"
+
+    - name: Settings for local development
+      if: inputs.compute != 'true'
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        cat >>"$GITHUB_STEP_SUMMARY" <<EOF
+        ### Slot \`$NAME\` is up
+
+        | Setting | Value |
+        |---|---|
+        | \`CosmosDatabaseName\` | \`ConsentSherpa--$NAME\` |
+        | SQL database | \`sqldb-csherpa-staging--$NAME\` |
+        | \`CookieScanQueueName\` | \`cookie-scan-jobs--$NAME\` |
+        | \`TranslationsPublishQueueName\` | \`translations-publish--$NAME\` |
+        | \`ShopifyWebhooksQueueName\` | \`shopify-webhooks--$NAME\` |
+        EOF

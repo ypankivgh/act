@@ -1,0 +1,60 @@
+name: 1 · Local
+
+# WHEN   you run it
+# DOES   the data of slot <name> in staging, for running the apps on your machine:
+#          up       create it, or do nothing if it exists
+#          refresh  delete it and create it again, empty
+#          down     delete it
+#        The run summary lists the settings for your local configuration.
+# NEVER  touches slots, prod or main data (--<name> names only, LOCKS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: Your slot, e.g. ypankiv. Lowercase words joined by single hyphens, at most 8 characters.
+        type: string
+        required: true
+      action:
+        type: choice
+        options: [ up, refresh, down ]
+        default: up
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slot-${{ inputs.name }}
+  cancel-in-progress: false
+
+jobs:
+  local:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the simulation's "Azure login": the right to push to _azure_
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            infrastructure
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+
+      - if: inputs.action != 'up'
+        uses: ./.github/actions/slot/down
+        with:
+          name: ${{ inputs.name }}
+          compute: 'false'
+
+      - if: inputs.action != 'down'
+        uses: ./.github/actions/slot/up
+        with:
+          name: ${{ inputs.name }}
+          compute: 'false'
+
+      - uses: ./.github/actions/azure/save
+        with:
+          message: local ${{ inputs.action }} ${{ inputs.name }}

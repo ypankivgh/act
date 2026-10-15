@@ -1,0 +1,82 @@
+name: 3 · Main
+
+# WHEN   a push to main (a merged PR)
+# DOES   build → deploy to staging's production slot → `staging` Shopify app
+# NEVER  creates or deletes anything: staging's production slot and main data already exist (Infra)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main
+  cancel-in-progress: false
+
+jobs:
+  build-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build/api
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build/web
+
+  build-worker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      image: ${{ steps.worker.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - id: worker
+        uses: ./.github/actions/build/worker
+        with:
+          env: staging
+      - uses: ./.github/actions/azure/save
+        with:
+          message: build worker ${{ steps.worker.outputs.image }} into staging
+
+  deploy:
+    needs: [ build-api, build-web, build-worker ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment:
+      name: staging
+      url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/staging/slots/production/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+      - uses: ./.github/actions/deploy
+        with:
+          env: staging
+          slot: production
+          commit: ${{ github.sha }}
+          worker-image: ${{ needs.build-worker.outputs.image }}
+      - uses: ./.github/actions/shopify
+        with:
+          app: staging
+          commit: ${{ github.sha }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: deploy staging/production ${{ github.sha }}

@@ -1,0 +1,59 @@
+name: Deploy
+description: >-
+  Deploys everything into one slot of one environment: this run's `api` and `web` artifacts and
+  the scan worker image, plus commit.txt recording what the slot runs. The slot's settings.json is
+  left alone: deploys move code, never settings. Needs the _azure_ branch at azure/; save afterwards.
+
+inputs:
+  env:
+    description: staging or prod.
+    required: true
+  slot:
+    description: production, preprod or a PR's slot. Prod's production is refused, reached only by swap.
+    required: true
+  commit:
+    description: The commit the artifacts were built from.
+    required: true
+  worker-image:
+    description: Image the slot's scan worker should run (from build/worker).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Refuse prod's production slot
+      if: inputs.env == 'prod' && inputs.slot == 'production'
+      shell: bash
+      run: |
+        echo "::error::Code reaches prod's production slot only by swap"
+        exit 1
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: api
+        path: ${{ runner.temp }}/api
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: web
+        path: ${{ runner.temp }}/web
+
+    - shell: bash
+      env:
+        ENV: ${{ inputs.env }}
+        SLOT: ${{ inputs.slot }}
+        COMMIT: ${{ inputs.commit }}
+        IMAGE: ${{ inputs.worker-image }}
+      run: |
+        set -euo pipefail
+        slot="azure/$ENV/slots/$SLOT"
+        # Like Azure: deploying to a slot that does not exist fails. Slot up or Infra creates it.
+        [[ -f $slot/settings.json ]] || { echo "::error::$ENV/$SLOT does not exist"; exit 1; }
+
+        find "$slot" -mindepth 1 -not -name settings.json -delete
+        mkdir -p "$slot/api"
+        cp "$RUNNER_TEMP/api/version.json" "$slot/api/version.json"
+        cp "$RUNNER_TEMP/web/index.html" "$slot/index.html"
+        cp "azure/$ENV/registry/$IMAGE" "$slot/worker.txt"
+        echo "$COMMIT" >"$slot/commit.txt"
+        echo "Deployed \`${COMMIT:0:7}\` to $ENV/$SLOT" >>"$GITHUB_STEP_SUMMARY"

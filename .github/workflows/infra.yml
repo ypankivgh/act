@@ -1,0 +1,64 @@
+name: 9 · Infra
+
+# WHEN   you run it, from main, after changing infrastructure/
+# DOES   everything permanent in one environment (infrastructure/main.sh): main data, the production
+#        slot, LOCKS; in prod also the preprod slot and data; plus the dashboard and Shopify records.
+#        Shows the changes only, unless `apply` is ticked.
+# NEVER  touches code already deployed to a slot, or any PR or local slot
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        type: choice
+        options: [ staging, prod ]
+        default: staging
+      apply:
+        description: Apply the changes. Off only shows them.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  infra:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            infrastructure
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
+
+      - name: Run main.sh
+        run: bash infrastructure/main.sh "${{ inputs.env }}"
+
+      # The what-if: what this run would change on the _azure_ branch.
+      - name: What would change
+        working-directory: azure
+        run: |
+          git add -A
+          {
+            echo "### Changes to ${{ inputs.env }}"
+            echo '```'
+            git diff --cached --stat || true
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+          git diff --cached --stat
+
+      - if: inputs.apply
+        uses: ./.github/actions/azure/save
+        with:
+          message: infra ${{ inputs.env }}

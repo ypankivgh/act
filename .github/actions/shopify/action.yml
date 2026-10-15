@@ -1,0 +1,40 @@
+name: Shopify
+description: >-
+  "Deploys" one Shopify app: records in azure/shopify/<app>.json where it points and which commit
+  it ships. staging, preprod and prod point at fixed slots (their tomls are static); `pr` points at
+  whichever PR slot is passed in. Needs the _azure_ branch at azure/; save afterwards.
+
+inputs:
+  app:
+    description: staging, pr, preprod or prod.
+    required: true
+  commit:
+    description: Commit whose storefront code ships.
+    required: true
+  url:
+    description: The PR slot's address (pr only).
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        APP: ${{ inputs.app }}
+        COMMIT: ${{ inputs.commit }}
+        URL: ${{ inputs.url }}
+        PAGES: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+      run: |
+        set -euo pipefail
+        case "$APP" in
+          staging) url="$PAGES/staging/slots/production/" ;;
+          preprod) url="$PAGES/prod/slots/preprod/" ;;
+          prod)    url="$PAGES/prod/slots/production/" ;;
+          pr)      [[ $URL =~ ^https://[a-z0-9./-]+$ ]] || { echo "::error::pr needs a slot URL"; exit 1; }
+                   url=$URL ;;
+          *)       echo "::error::Unknown app '$APP'"; exit 1 ;;
+        esac
+        mkdir -p azure/shopify
+        jq -n --arg app "$APP" --arg url "$url" --arg commit "$COMMIT" --arg at "$(date -u +%FT%TZ)" \
+          '{app: $app, pointsAt: $url, commit: $commit, deployedAt: $at}' >"azure/shopify/$APP.json"
+        echo "Shopify app \`$APP\` → $url" >>"$GITHUB_STEP_SUMMARY"

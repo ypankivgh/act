@@ -1,0 +1,38 @@
+name: Save to Azure
+description: >-
+  The simulation's stand-in for Azure's API: commits whatever the job changed under azure/ (a
+  checkout of the _azure_ branch) and pushes it. Several jobs push at once, so a rejected push is
+  rebased and retried; they write different files, so the rebase never conflicts.
+
+inputs:
+  message:
+    description: Commit message, e.g. "deploy staging/pr-3 abc1234".
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      working-directory: azure
+      env:
+        MESSAGE: ${{ inputs.message }}
+      run: |
+        set -euo pipefail
+        git config user.name github-actions
+        git config user.email github-actions@users.noreply.github.com
+        git add -A
+        if git diff --cached --quiet; then
+          echo "Nothing changed"
+          exit 0
+        fi
+        git commit -qm "$MESSAGE"
+        for attempt in 1 2 3 4 5; do
+          if git push -q; then
+            echo "Saved: $MESSAGE" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "Push rejected (attempt $attempt); rebasing on what another run pushed"
+          git pull -q --rebase
+        done
+        echo "::error::Could not push to _azure_ after 5 attempts"
+        exit 1

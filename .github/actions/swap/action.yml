@@ -1,0 +1,45 @@
+name: Swap
+description: >-
+  Swaps prod's preprod and production: every file of the two slots except settings.json (sticky),
+  so code, API, worker and commit.txt trade places while each slot keeps its data and Shopify app.
+  Checks preprod first and refuses to swap a broken one. Outputs the commit now in production.
+  Needs the _azure_ branch at azure/; save afterwards.
+
+outputs:
+  commit:
+    description: Commit now in production.
+    value: ${{ steps.swap.outputs.commit }}
+
+runs:
+  using: composite
+  steps:
+    # Stands in for swap with preview's health check: in Azure, preprod restarts with production's
+    # settings and must answer /health before traffic moves.
+    - name: Check preprod
+      shell: bash
+      run: |
+        set -euo pipefail
+        preprod=azure/prod/slots/preprod
+        [[ -f $preprod/index.html ]] || { echo "::error::preprod has nothing deployed; run Release first"; exit 1; }
+        jq -e .commit "$preprod/api/version.json" >/dev/null || { echo "::error::preprod's API is broken"; exit 1; }
+
+    - id: swap
+      name: Swap
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s dotglob
+        slots=azure/prod/slots
+        tmp=$(mktemp -d)
+        for slot in production preprod; do
+          mkdir -p "$tmp/$slot"
+          for f in "$slots/$slot"/*; do
+            [[ $(basename "$f") == settings.json ]] || mv "$f" "$tmp/$slot/"
+          done
+        done
+        mv "$tmp/production"/* "$slots/preprod/" 2>/dev/null || true
+        mv "$tmp/preprod"/* "$slots/production/"
+        commit=$(cat "$slots/production/commit.txt")
+        previous=$(cat "$slots/preprod/commit.txt" 2>/dev/null || echo nothing)
+        echo "commit=$commit" >>"$GITHUB_OUTPUT"
+        echo "Production now runs \`${commit:0:7}\`; preprod holds \`${previous:0:7}\`" >>"$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,40 @@
+name: Build worker
+description: >-
+  Makes sure the scan worker "image" for the checkout exists in an environment's registry
+  (azure/<env>/registry/), and outputs its name. Needs the code checked out with full history and
+  the _azure_ branch checked out at azure/. Save afterwards.
+
+inputs:
+  env:
+    description: staging or prod, whose registry gets the image.
+    required: true
+
+outputs:
+  image:
+    description: Image name, e.g. worker-1a2b3c4.txt.
+    value: ${{ steps.image.outputs.image }}
+
+runs:
+  using: composite
+  steps:
+    - id: image
+      shell: bash
+      env:
+        ENV: ${{ inputs.env }}
+      run: |
+        set -euo pipefail
+        # Tagged by the last commit that changed the worker, not by the commit being built: a change
+        # elsewhere reuses the image instead of rebuilding it. Push a change outside app/worker/
+        # and this step says "Reusing" and takes a second.
+        tag=$(git log -1 --format=%h -- app/worker)
+        image="worker-$tag.txt"
+        registry="azure/$ENV/registry"
+        if [[ -f $registry/$image ]]; then
+          echo "Reusing $image"
+        else
+          echo "Building $image"
+          sleep 30   # stands in for the several-minute Chromium image build
+          mkdir -p "$registry"
+          { cat app/worker/worker.txt; echo "built from $tag"; } >"$registry/$image"
+        fi
+        echo "image=$image" >>"$GITHUB_OUTPUT"

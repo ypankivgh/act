@@ -1,0 +1,44 @@
+name: Release check
+description: >-
+  Resolves a branch, tag or commit to the commit SHA a release ships, and refuses it unless it is
+  on main or a hotfix/* branch. Those change only through reviewed PRs; without this check, any
+  pushed commit could be released by name.
+
+inputs:
+  repo:
+    description: owner/name of the repository the ref belongs to.
+    required: true
+  ref:
+    description: Branch, tag or commit.
+    required: true
+  token:
+    description: Token that can read the repository.
+    required: true
+
+outputs:
+  sha:
+    value: ${{ steps.check.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repo }}
+        REF: ${{ inputs.ref }}
+      run: |
+        set -euo pipefail
+        sha=$(gh api "repos/$REPO/commits/$REF" --jq .sha)
+        # compare/<sha>...<branch> is "ahead" or "identical" exactly when <sha> is on <branch>.
+        for branch in main $(gh api "repos/$REPO/branches" --paginate --jq '.[].name | select(startswith("hotfix/"))'); do
+          status=$(gh api "repos/$REPO/compare/$sha...$branch" --jq .status)
+          if [[ $status == ahead || $status == identical ]]; then
+            echo "sha=$sha" >>"$GITHUB_OUTPUT"
+            echo "Releasing $REPO \`$sha\` ($REF, on $branch)" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+        done
+        echo "::error::$REF ($sha) in $REPO is on neither main nor a hotfix/* branch"
+        exit 1

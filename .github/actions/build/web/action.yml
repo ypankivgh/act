@@ -1,0 +1,24 @@
+name: Build web
+description: >-
+  Tests the checkout, then "builds" the admin app: index.html with the commit baked in, uploaded as
+  the artifact `web`. Nothing that fails the tests gets as far as an artifact.
+
+runs:
+  using: composite
+  steps:
+    - name: Test
+      shell: bash
+      run: bash app/test.sh
+
+    - name: Build
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/web"
+        sed "s/__COMMIT__/$(git rev-parse HEAD)/" app/web/index.html >"$RUNNER_TEMP/web/index.html"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: web
+        path: ${{ runner.temp }}/web/
+        if-no-files-found: error
