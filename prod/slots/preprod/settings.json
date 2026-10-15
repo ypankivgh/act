@@ -1,0 +1,8 @@
+{
+  "environment": "prod",
+  "slot": "preprod",
+  "cosmosDatabase": "ConsentSherpa--preprod",
+  "sqlDatabase": "sqldb-csherpa-prod--preprod",
+  "scanQueue": "cookie-scan-jobs--preprod",
+  "shopifyApp": "preprod"
+}
