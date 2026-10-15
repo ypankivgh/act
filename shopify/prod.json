@@ -1,4 +1,6 @@
 {
   "app": "prod",
-  "pointsAt": null
+  "pointsAt": "https://ypankivgh.github.io/act/prod/slots/production/",
+  "commit": "360e5ea15edcb5a3bdcf80f7f120efdf547a8d79",
+  "deployedAt": "2026-10-15T21:55:28Z"
 }
