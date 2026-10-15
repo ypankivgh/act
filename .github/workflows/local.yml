@@ -45,16 +45,14 @@ jobs:
           path: azure
 
       - if: inputs.action != 'up'
-        uses: ./.github/actions/slot/down
+        uses: ./.github/actions/data/down
         with:
           name: ${{ inputs.name }}
-          compute: 'false'
 
       - if: inputs.action != 'down'
-        uses: ./.github/actions/slot/up
+        uses: ./.github/actions/data/up
         with:
           name: ${{ inputs.name }}
-          compute: 'false'
 
       - uses: ./.github/actions/azure/save
         with:

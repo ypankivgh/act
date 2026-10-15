@@ -43,13 +43,16 @@ jobs:
         with:
           ref: _azure_
           path: azure
+      - uses: ./.github/actions/data/up
+        with:
+          name: ${{ env.SLOT }}
       - id: slot
         uses: ./.github/actions/slot/up
         with:
           name: ${{ env.SLOT }}
       - uses: ./.github/actions/azure/save
         with:
-          message: slot up ${{ env.SLOT }}
+          message: data and slot up ${{ env.SLOT }}
 
   build-api:
     if: github.event.action != 'closed' && !github.event.pull_request.draft
@@ -171,6 +174,9 @@ jobs:
       - uses: ./.github/actions/slot/down
         with:
           name: ${{ env.SLOT }}
+      - uses: ./.github/actions/data/down
+        with:
+          name: ${{ env.SLOT }}
       - uses: ./.github/actions/azure/save
         with:
-          message: slot down ${{ env.SLOT }}
+          message: slot and data down ${{ env.SLOT }}

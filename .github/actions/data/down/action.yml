@@ -1,0 +1,41 @@
+name: Data down
+description: >-
+  Deletes data set <name> in staging: every data file ending in --<name>. Running it twice is
+  harmless. Needs the _azure_ branch at azure/; save afterwards.
+
+  It cannot reach main data: no main name contains `--`, and anything listed in LOCKS is refused.
+  In real Azure that last check is a CanNotDelete lock that Azure enforces; here it is only this
+  script reading a file (see README).
+
+inputs:
+  name:
+    description: Data set name.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the name
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        [[ $NAME =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#NAME} -le 8 && $NAME != production && $NAME != preprod ]] \
+          || { echo "::error::'$NAME' is not a data set that can be deleted"; exit 1; }
+
+    - name: Delete the data
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        set -euo pipefail
+        root=azure/staging
+        # Stands in for listing databases and queues and keeping those that end in --<name>.
+        (cd "$root" && find data -name "*--$NAME.json" 2>/dev/null || true) |
+        while read -r target; do
+          if grep -qxF "$target" "$root/LOCKS" 2>/dev/null; then
+            echo "::error::$target is locked"; exit 1
+          fi
+          rm -f "${root:?}/$target"
+          echo "Deleted staging/$target" >>"$GITHUB_STEP_SUMMARY"
+        done

@@ -50,12 +50,12 @@ branch, which GitHub Pages serves.
 | Swap with preview + health check | a file check on preprod, then the two slots' files trade places |
 | Commit tag on the slot resource | `commit.txt`, which moves with the code |
 | Shopify app deploy | `shopify/<app>.json` records where the app points |
-| `CanNotDelete` locks, enforced by Azure | `LOCKS` file, enforced only by `slot/down` reading it |
+| `CanNotDelete` locks, enforced by Azure | `LOCKS` file, enforced only by `data/down` and `slot/down` reading it |
 | Prod identity trusts only `main` | `if: github.ref == 'refs/heads/main'` + environment `production` (add a reviewer) |
 
 Every workflow has the same jobs, and every action the same named steps, as `monorepo/`, with one
-exception: `slot/up` leaves out two Azure-only steps (choosing copy or skip for a new SQL database,
-and reading the worker's current image), which mean nothing here.
+exception: two Azure-only steps mean nothing here and are left out, `data/up`'s "Choose copy or
+skip for the SQL database" and `slot/up`'s "Read the worker's current image".
 
 What the simulation cannot show: **real enforcement.** Here every job with `contents: write` could
 write anything on `_azure_`; the protection is only the code's own checks. In Azure, the staging

@@ -1,19 +1,16 @@
 name: Slot down
 description: >-
-  Deletes a slot in staging: its data (every data file ending in --<name>) and, with compute, the
-  slot folder. Running it twice is harmless. Needs the _azure_ branch at azure/; save afterwards.
+  Deletes slot <name> in staging: the folder azure/staging/slots/<name>/. Its data set stays:
+  data/down deletes that. Running it twice is harmless. Needs the _azure_ branch at azure/; save
+  afterwards.
 
-  It cannot reach main data: no main name contains `--`, production and preprod are refused, and
-  anything listed in LOCKS is refused. In real Azure that last check is a CanNotDelete lock that
-  Azure enforces; here it is only this script reading a file (see README).
+  It cannot reach a production slot: production and preprod are refused, and anything listed in
+  LOCKS is refused (a stand-in for Azure's own enforcement, see README).
 
 inputs:
   name:
     description: Slot name.
     required: true
-  compute:
-    description: "'false' deletes only the data, as for local development."
-    default: 'true'
 
 runs:
   using: composite
@@ -27,7 +24,6 @@ runs:
           || { echo "::error::'$NAME' is not a slot that can be deleted"; exit 1; }
 
     - name: Delete the apps
-      if: inputs.compute == 'true'
       shell: bash
       env:
         NAME: ${{ inputs.name }}
@@ -41,20 +37,3 @@ runs:
         fi
         rm -rf "${root:?}/$target"
         echo "Deleted staging/$target" >>"$GITHUB_STEP_SUMMARY"
-
-    - name: Delete the data
-      shell: bash
-      env:
-        NAME: ${{ inputs.name }}
-      run: |
-        set -euo pipefail
-        root=azure/staging
-        # Stands in for listing databases and queues and keeping those that end in --<name>.
-        (cd "$root" && find data -name "*--$NAME.json" 2>/dev/null || true) |
-        while read -r target; do
-          if grep -qxF "$target" "$root/LOCKS" 2>/dev/null; then
-            echo "::error::$target is locked"; exit 1
-          fi
-          rm -f "${root:?}/$target"
-          echo "Deleted staging/$target" >>"$GITHUB_STEP_SUMMARY"
-        done

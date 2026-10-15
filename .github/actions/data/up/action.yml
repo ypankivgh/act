@@ -1,0 +1,46 @@
+name: Data up
+description: >-
+  Creates data set <name> in staging, or does nothing that is already there: a Cosmos database, a
+  SQL database and three queues, all named --<name> (JSON files under azure/staging/data/). Used
+  alone for local development, and before slot/up for a PR, whose slot uses the data set of the
+  same name. Lists the set's settings in the run summary. Needs the _azure_ branch at azure/; save
+  afterwards.
+
+inputs:
+  name:
+    description: Data set name, e.g. ypankiv or pr-3. Lowercase words joined by single hyphens, at most 8 characters.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the name
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        [[ $NAME =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#NAME} -le 8 && $NAME != production && $NAME != preprod ]] \
+          || { echo "::error::'$NAME' must be lowercase words joined by single hyphens, at most 8 characters"; exit 1; }
+
+    - name: Create the data
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: bash infrastructure/data.sh staging "$NAME"
+
+    - name: List its settings
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        cat >>"$GITHUB_STEP_SUMMARY" <<EOF
+        ### Data set \`$NAME\` is up
+
+        | Setting | Value |
+        |---|---|
+        | \`CosmosDatabaseName\` | \`ConsentSherpa--$NAME\` |
+        | SQL database | \`sqldb-csherpa-staging--$NAME\` |
+        | \`CookieScanQueueName\` | \`cookie-scan-jobs--$NAME\` |
+        | \`TranslationsPublishQueueName\` | \`translations-publish--$NAME\` |
+        | \`ShopifyWebhooksQueueName\` | \`shopify-webhooks--$NAME\` |
+        EOF
