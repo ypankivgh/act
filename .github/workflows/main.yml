@@ -73,10 +73,27 @@ jobs:
           slot: production
           commit: ${{ github.sha }}
           worker-image: ${{ needs.build-worker.outputs.image }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: deploy staging/production ${{ github.sha }}
+
+  shopify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
       - uses: ./.github/actions/shopify
         with:
           app: staging
           commit: ${{ github.sha }}
       - uses: ./.github/actions/azure/save
         with:
-          message: deploy staging/production ${{ github.sha }}
+          message: shopify staging ${{ github.sha }}

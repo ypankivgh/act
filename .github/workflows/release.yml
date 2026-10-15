@@ -1,4 +1,5 @@
 name: 4 · Release
+run-name: Release · ${{ inputs.ref }}
 
 # WHEN   you run it, from main. `ref` defaults to main; for a hotfix, name its branch.
 # DOES   check ref → build → deploy to prod's preprod slot → `preprod` Shopify app.
@@ -105,10 +106,27 @@ jobs:
           slot: preprod
           commit: ${{ needs.check.outputs.sha }}
           worker-image: ${{ needs.build-worker.outputs.image }}
+      - uses: ./.github/actions/azure/save
+        with:
+          message: release ${{ needs.check.outputs.sha }} to prod/preprod
+
+  shopify:
+    needs: [ check, deploy ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
       - uses: ./.github/actions/shopify
         with:
           app: preprod
           commit: ${{ needs.check.outputs.sha }}
       - uses: ./.github/actions/azure/save
         with:
-          message: release ${{ needs.check.outputs.sha }} to prod/preprod
+          message: shopify preprod ${{ needs.check.outputs.sha }}

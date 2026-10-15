@@ -1,8 +1,9 @@
 name: 5 · Swap
 
 # WHEN   you run it, from main, after checking a release on preprod
-# DOES   preprod ↔ production (preprod checked first) → `prod` Shopify app → git tag prod-<time>
-#        on the commit now live. Run it again to roll back: preprod still holds the previous version.
+# DOES   preprod ↔ production (each app checked before it moves) → `prod` Shopify app → git tag
+#        prod-<time> on the commit now live. Run it again to roll back: preprod still holds the
+#        previous version.
 # NEVER  builds anything, or moves settings: settings.json stays with its slot, only code moves
 
 on:
@@ -20,12 +21,14 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # push to _azure_, and the git tag
+      contents: write
     # Add a required reviewer to this environment (Settings → Environments) to make every swap wait
     # for an approval here, and restrict it to main.
     environment:
       name: production
       url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/prod/slots/production/
+    outputs:
+      commit: ${{ steps.swap.outputs.api-commit }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,18 +39,35 @@ jobs:
           path: azure
       - id: swap
         uses: ./.github/actions/swap
+      - uses: ./.github/actions/azure/save
+        with:
+          message: swap prod, production runs ${{ steps.swap.outputs.api-commit }}
+
+  shopify:
+    needs: swap
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push to _azure_, and the git tag
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@v4
+        with:
+          ref: _azure_
+          path: azure
       - uses: ./.github/actions/shopify
         with:
           app: prod
-          commit: ${{ steps.swap.outputs.commit }}
+          commit: ${{ needs.swap.outputs.commit }}
       - uses: ./.github/actions/azure/save
         with:
-          message: swap prod, production runs ${{ steps.swap.outputs.commit }}
+          message: shopify prod ${{ needs.swap.outputs.commit }}
       # What a hotfix branches from.
       - name: Tag the live commit
         env:
           GH_TOKEN: ${{ github.token }}
-          COMMIT: ${{ steps.swap.outputs.commit }}
+          COMMIT: ${{ needs.swap.outputs.commit }}
         run: |
           tag="prod-$(date -u +%Y%m%d-%H%M%S)"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$COMMIT" --silent

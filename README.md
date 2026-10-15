@@ -16,7 +16,7 @@ branch, which GitHub Pages serves.
 4. **Actions → 9 · Infra:** run with `env: staging`, read the summary, run again with `apply`.
    Then the same for `prod`. Open `https://ypankivgh.github.io/act/`: the dashboard.
 
-## Things to try :)
+## Things to try
 
 | Try | Watch |
 |---|---|
@@ -52,6 +52,10 @@ branch, which GitHub Pages serves.
 | Shopify app deploy | `shopify/<app>.json` records where the app points |
 | `CanNotDelete` locks, enforced by Azure | `LOCKS` file, enforced only by `slot/down` reading it |
 | Prod identity trusts only `main` | `if: github.ref == 'refs/heads/main'` + environment `production` (add a reviewer) |
+
+Every workflow has the same jobs, and every action the same named steps, as `monorepo/`, with one
+exception: `slot/up` leaves out two Azure-only steps (choosing copy or skip for a new SQL database,
+and reading the worker's current image), which mean nothing here.
 
 What the simulation cannot show: **real enforcement.** Here every job with `contents: write` could
 write anything on `_azure_`; the protection is only the code's own checks. In Azure, the staging

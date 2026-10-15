@@ -1,7 +1,7 @@
 name: Slot down
 description: >-
-  Deletes a slot in staging: every data file ending in --<name> and, with compute, the slot folder.
-  Running it twice is harmless. Needs the _azure_ branch at azure/; save afterwards.
+  Deletes a slot in staging: its data (every data file ending in --<name>) and, with compute, the
+  slot folder. Running it twice is harmless. Needs the _azure_ branch at azure/; save afterwards.
 
   It cannot reach main data: no main name contains `--`, production and preprod are refused, and
   anything listed in LOCKS is refused. In real Azure that last check is a CanNotDelete lock that
@@ -26,22 +26,35 @@ runs:
         [[ $NAME =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#NAME} -le 8 && $NAME != production && $NAME != preprod ]] \
           || { echo "::error::'$NAME' is not a slot that can be deleted"; exit 1; }
 
-    - name: Delete
+    - name: Delete the apps
+      if: inputs.compute == 'true'
       shell: bash
       env:
         NAME: ${{ inputs.name }}
-        COMPUTE: ${{ inputs.compute }}
       run: |
         set -euo pipefail
         root=azure/staging
-        targets=$(cd "$root" && find data -name "*--$NAME.json" 2>/dev/null || true)
-        if [[ $COMPUTE == true && -d $root/slots/$NAME ]]; then targets+=$'\n'"slots/$NAME"; fi
+        target="slots/$NAME"
+        [[ -d $root/$target ]] || exit 0
+        if grep -qxF "$target" "$root/LOCKS" 2>/dev/null; then
+          echo "::error::$target is locked"; exit 1
+        fi
+        rm -rf "${root:?}/$target"
+        echo "Deleted staging/$target" >>"$GITHUB_STEP_SUMMARY"
 
+    - name: Delete the data
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        set -euo pipefail
+        root=azure/staging
+        # Stands in for listing databases and queues and keeping those that end in --<name>.
+        (cd "$root" && find data -name "*--$NAME.json" 2>/dev/null || true) |
         while read -r target; do
-          [[ -z $target ]] && continue
           if grep -qxF "$target" "$root/LOCKS" 2>/dev/null; then
             echo "::error::$target is locked"; exit 1
           fi
-          rm -rf "${root:?}/$target"
+          rm -f "${root:?}/$target"
           echo "Deleted staging/$target" >>"$GITHUB_STEP_SUMMARY"
-        done <<<"$targets"
+        done

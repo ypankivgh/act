@@ -1,4 +1,5 @@
 name: 9 · Infra
+run-name: Infra · ${{ inputs.env }} · ${{ inputs.apply && 'apply' || 'what-if' }}
 
 # WHEN   you run it, from main, after changing infrastructure/
 # DOES   everything permanent in one environment (infrastructure/main.sh): main data, the production

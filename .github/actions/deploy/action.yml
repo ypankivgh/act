@@ -1,8 +1,9 @@
 name: Deploy
 description: >-
-  Deploys everything into one slot of one environment: this run's `api` and `web` artifacts and
-  the scan worker image, plus commit.txt recording what the slot runs. The slot's settings.json is
-  left alone: deploys move code, never settings. Needs the _azure_ branch at azure/; save afterwards.
+  Deploys everything into one slot of one environment: the API, the function host and the admin app
+  from this run's `api` and `web` artifacts, and the slot's scan worker. Records the commit on the
+  slot as commit.txt, which the swap reads. The slot's settings.json is never touched. Needs the
+  _azure_ branch at azure/; save afterwards.
 
 inputs:
   env:
@@ -12,10 +13,10 @@ inputs:
     description: production, preprod or a PR's slot. Prod's production is refused, reached only by swap.
     required: true
   commit:
-    description: The commit the artifacts were built from.
+    description: The commit the artifacts and image were built from.
     required: true
   worker-image:
-    description: Image the slot's scan worker should run (from build/worker).
+    description: Image the slot's scan worker should run.
     required: true
 
 runs:
@@ -38,7 +39,33 @@ runs:
         name: web
         path: ${{ runner.temp }}/web
 
-    - shell: bash
+    # Each of the next three steps stands in for one webapps-deploy / functions-action step. Like
+    # those, it fails when the slot does not exist: Slot up or Infra creates slots, deploy never does.
+    - name: Deploy the API
+      shell: bash
+      env:
+        SLOT_DIR: azure/${{ inputs.env }}/slots/${{ inputs.slot }}
+      run: |
+        set -euo pipefail
+        [[ -f $SLOT_DIR/settings.json ]] || { echo "::error::${SLOT_DIR#azure/} does not exist"; exit 1; }
+        rm -rf "$SLOT_DIR/api" && cp -r "$RUNNER_TEMP/api/api" "$SLOT_DIR/api"
+
+    - name: Deploy the function host
+      shell: bash
+      env:
+        SLOT_DIR: azure/${{ inputs.env }}/slots/${{ inputs.slot }}
+      run: |
+        set -euo pipefail
+        rm -rf "$SLOT_DIR/func" && cp -r "$RUNNER_TEMP/api/func" "$SLOT_DIR/func"
+
+    - name: Deploy the admin app
+      shell: bash
+      env:
+        SLOT_DIR: azure/${{ inputs.env }}/slots/${{ inputs.slot }}
+      run: cp "$RUNNER_TEMP/web/index.html" "$SLOT_DIR/index.html"
+
+    - name: Roll the scan worker and record the commit
+      shell: bash
       env:
         ENV: ${{ inputs.env }}
         SLOT: ${{ inputs.slot }}
@@ -46,14 +73,7 @@ runs:
         IMAGE: ${{ inputs.worker-image }}
       run: |
         set -euo pipefail
-        slot="azure/$ENV/slots/$SLOT"
-        # Like Azure: deploying to a slot that does not exist fails. Slot up or Infra creates it.
-        [[ -f $slot/settings.json ]] || { echo "::error::$ENV/$SLOT does not exist"; exit 1; }
-
-        find "$slot" -mindepth 1 -not -name settings.json -delete
-        mkdir -p "$slot/api"
-        cp "$RUNNER_TEMP/api/version.json" "$slot/api/version.json"
-        cp "$RUNNER_TEMP/web/index.html" "$slot/index.html"
-        cp "azure/$ENV/registry/$IMAGE" "$slot/worker.txt"
-        echo "$COMMIT" >"$slot/commit.txt"
-        echo "Deployed \`${COMMIT:0:7}\` to $ENV/$SLOT" >>"$GITHUB_STEP_SUMMARY"
+        slot_dir="azure/$ENV/slots/$SLOT"
+        cp "azure/$ENV/registry/$IMAGE" "$slot_dir/worker.txt"
+        echo "$COMMIT" >"$slot_dir/commit.txt"
+        echo "Deployed \`${COMMIT:0:7}\` to $ENV / $SLOT" >>"$GITHUB_STEP_SUMMARY"

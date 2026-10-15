@@ -1,4 +1,8 @@
 name: 2 · PR
+run-name: >-
+  ${{ github.event.action == 'closed'
+      && format('PR #{0} ↓ down ({1})', github.event.pull_request.number, github.event.pull_request.merged && 'merged' || 'closed')
+      || format('PR #{0} ↑ up · {1}', github.event.pull_request.number, github.event.pull_request.title) }}
 
 # WHEN   a PR is opened, pushed to, marked ready, or closed (drafts are skipped)
 # DOES   slot pr-<N> up → build → deploy → point the `pr` Shopify app at it → comment the link.

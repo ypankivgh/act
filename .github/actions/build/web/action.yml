@@ -1,21 +1,25 @@
 name: Build web
 description: >-
-  Tests the checkout, then "builds" the admin app: index.html with the commit baked in, uploaded as
-  the artifact `web`. Nothing that fails the tests gets as far as an artifact.
+  Checks, tests and builds the admin app from a checkout, and uploads it as the artifact `web`
+  (index.html with the commit baked in). Nothing that fails the checks gets as far as an artifact.
 
 runs:
   using: composite
   steps:
-    - name: Test
+    - name: Check, test and build
       shell: bash
-      run: bash app/test.sh
+      run: |
+        set -euo pipefail
+        bash app/test.sh
+        mkdir -p "$RUNNER_TEMP/build"
+        sed "s/__COMMIT__/$(git rev-parse HEAD)/" app/web/index.html >"$RUNNER_TEMP/build/index.html"
 
-    - name: Build
+    - name: Package
       shell: bash
       run: |
         set -euo pipefail
         mkdir -p "$RUNNER_TEMP/web"
-        sed "s/__COMMIT__/$(git rev-parse HEAD)/" app/web/index.html >"$RUNNER_TEMP/web/index.html"
+        cp "$RUNNER_TEMP/build/index.html" "$RUNNER_TEMP/web/index.html"
 
     - uses: actions/upload-artifact@v4
       with:
