@@ -1,0 +1,8 @@
+{
+  "environment": "staging",
+  "slot": "production",
+  "cosmosDatabase": "ConsentSherpa",
+  "sqlDatabase": "sqldb-csherpa-staging",
+  "scanQueue": "cookie-scan-jobs",
+  "shopifyApp": "staging"
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulated Azure</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    h2 { margin-top: 2rem; border-bottom: 1px solid #ccc; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { text-align: left; padding: .25rem .6rem; border-bottom: 1px solid #eee; vertical-align: top; }
+    code { background: #eee; padding: 0 .3em; border-radius: 3px; }
+    .muted { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Simulated Azure</h1>
+  <p class="muted">The <code>_azure_</code> branch, read live. Written by the workflows; Pages takes about a minute to show a change.</p>
+  <div id="out">loading…</div>
+  <script>
+    // Read the branch through the GitHub API rather than a generated list, so no workflow has to
+    // keep an index up to date (and two runs pushing at once never fight over one).
+    const [owner, repo] = [location.hostname.split('.')[0], location.pathname.split('/')[1]];
+    const text = p => fetch(p, { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).catch(() => '');
+    const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+    async function main() {
+      const tree = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/_azure_?recursive=1`).then(r => r.json());
+      const paths = (tree.tree || []).filter(e => e.type === 'blob').map(e => e.path);
+      let html = '';
+
+      for (const env of ['staging', 'prod']) {
+        html += `<h2>${env}</h2><h3>Slots</h3><table><tr><th>Slot</th><th>Commit</th><th>Settings (sticky)</th></tr>`;
+        const slots = [...new Set(paths.filter(p => p.startsWith(`${env}/slots/`)).map(p => p.split('/')[2]))];
+        for (const slot of slots) {
+          const base = `${env}/slots/${slot}/`;
+          const commit = (await text(base + 'commit.txt')).trim();
+          const settings = await text(base + 'settings.json');
+          html += `<tr><td><a href="${base}">${slot}</a></td><td><code>${commit.slice(0, 7) || '—'}</code></td>`
+                + `<td><pre>${esc(settings)}</pre></td></tr>`;
+        }
+        html += '</table><h3>Data</h3><table>';
+        for (const p of paths.filter(p => p.startsWith(`${env}/data/`))) html += `<tr><td><code>${p.slice(env.length + 6)}</code></td></tr>`;
+        html += '</table><h3>Registry</h3><table>';
+        for (const p of paths.filter(p => p.startsWith(`${env}/registry/`))) html += `<tr><td><code>${p.split('/').pop()}</code></td></tr>`;
+        html += '</table>';
+      }
+
+      html += '<h2>Shopify apps</h2><table><tr><th>App</th><th>Points at</th><th>Commit</th></tr>';
+      for (const app of ['staging', 'pr', 'preprod', 'prod']) {
+        const a = JSON.parse((await text(`shopify/${app}.json`)) || '{}');
+        html += `<tr><td>${app}</td><td>${a.pointsAt ? `<a href="${a.pointsAt}">${a.pointsAt}</a>` : '—'}</td>`
+              + `<td><code>${(a.commit || '').slice(0, 7)}</code></td></tr>`;
+      }
+      document.getElementById('out').innerHTML = html + '</table>';
+    }
+    main();
+  </script>
+</body>
+</html>

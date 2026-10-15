@@ -1,0 +1,6 @@
+data/cosmos/ConsentSherpa.json
+data/sql/sqldb-csherpa-staging.json
+data/queues/cookie-scan-jobs.json
+data/queues/translations-publish.json
+data/queues/shopify-webhooks.json
+slots/production
