@@ -16,7 +16,7 @@ branch, which GitHub Pages serves.
 4. **Actions → 9 · Infra:** run with `env: staging`, read the summary, run again with `apply`.
    Then the same for `prod`. Open `https://ypankivgh.github.io/act/`: the dashboard.
 
-## Things to try
+## Things to try :)
 
 | Try | Watch |
 |---|---|
