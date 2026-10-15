@@ -1,45 +1,68 @@
 name: Swap
 description: >-
-  Swaps prod's preprod and production: every file of the two slots except settings.json (sticky),
-  so code, API, worker and commit.txt trade places while each slot keeps its data and Shopify app.
-  Checks preprod first and refuses to swap a broken one. Outputs the commit now in production.
-  Needs the _azure_ branch at azure/; save afterwards.
+  Swaps prod's preprod and production: the API, the function host and the admin app (each checked
+  first), the two scan workers' images, and the commit records. settings.json never moves (sticky),
+  so each slot keeps its data and Shopify app. Outputs the commits now in production. Needs the
+  _azure_ branch at azure/; save afterwards.
 
 outputs:
-  commit:
-    description: Commit now in production.
-    value: ${{ steps.swap.outputs.commit }}
+  api-commit:
+    description: API commit now in production.
+    value: ${{ steps.tags.outputs.commit }}
+  web-commit:
+    description: Web commit now in production (the same commit: one repository).
+    value: ${{ steps.tags.outputs.commit }}
 
 runs:
   using: composite
   steps:
-    # Stands in for swap with preview's health check: in Azure, preprod restarts with production's
-    # settings and must answer /health before traffic moves.
-    - name: Check preprod
+    # Stands in for swap with preview: in Azure, preprod restarts with production's settings and must
+    # answer its health check before traffic moves. Here the check is that preprod's copy of the app
+    # is there and well formed. A failed check stops before that app moves. Backend before the
+    # admin app that calls it.
+    - name: Swap the apps
       shell: bash
       run: |
         set -euo pipefail
-        preprod=azure/prod/slots/preprod
-        [[ -f $preprod/index.html ]] || { echo "::error::preprod has nothing deployed; run Release first"; exit 1; }
-        jq -e .commit "$preprod/api/version.json" >/dev/null || { echo "::error::preprod's API is broken"; exit 1; }
-
-    - id: swap
-      name: Swap
-      shell: bash
-      run: |
-        set -euo pipefail
-        shopt -s dotglob
         slots=azure/prod/slots
-        tmp=$(mktemp -d)
-        for slot in production preprod; do
-          mkdir -p "$tmp/$slot"
-          for f in "$slots/$slot"/*; do
-            [[ $(basename "$f") == settings.json ]] || mv "$f" "$tmp/$slot/"
-          done
+        healthy() {
+          case $1 in
+            api|func)   jq -e .commit "$slots/preprod/$1/version.json" >/dev/null 2>&1 ;;
+            index.html) [[ -f $slots/preprod/index.html ]] ;;
+          esac
+        }
+        for app in api func index.html; do
+          healthy "$app" || { echo "::error::preprod's $app failed its check; nothing more was swapped"; exit 1; }
+          tmp=$(mktemp -d)
+          mv "$slots/preprod/$app" "$tmp/"
+          if [[ -e $slots/production/$app ]]; then mv "$slots/production/$app" "$slots/preprod/"; fi
+          mv "$tmp/$app" "$slots/production/"
+          echo "Swapped $app" >>"$GITHUB_STEP_SUMMARY"
         done
-        mv "$tmp/production"/* "$slots/preprod/" 2>/dev/null || true
-        mv "$tmp/preprod"/* "$slots/production/"
-        commit=$(cat "$slots/production/commit.txt")
-        previous=$(cat "$slots/preprod/commit.txt" 2>/dev/null || echo nothing)
-        echo "commit=$commit" >>"$GITHUB_OUTPUT"
-        echo "Production now runs \`${commit:0:7}\`; preprod holds \`${previous:0:7}\`" >>"$GITHUB_STEP_SUMMARY"
+
+    # Container Apps has no slots: the two workers trade images, so the preprod worker keeps the
+    # previous version just like the preprod slot.
+    - name: Swap the worker images
+      shell: bash
+      run: |
+        set -euo pipefail
+        slots=azure/prod/slots
+        tmp=$(mktemp)
+        cp "$slots/preprod/worker.txt" "$tmp"
+        if [[ -f $slots/production/worker.txt ]]; then cp "$slots/production/worker.txt" "$slots/preprod/worker.txt"; fi
+        cp "$tmp" "$slots/production/worker.txt"
+
+    # In Azure the commit is a tag on the slot resource, which does not move with a swap, so it is
+    # swapped here. commit.txt behaves the same way for the same reason: this step moves it.
+    - name: Swap the commit tags
+      id: tags
+      shell: bash
+      run: |
+        set -euo pipefail
+        slots=azure/prod/slots
+        production=$(cat "$slots/production/commit.txt" 2>/dev/null || true)
+        preprod=$(cat "$slots/preprod/commit.txt")
+        echo "$preprod" >"$slots/production/commit.txt"
+        if [[ -n $production ]]; then echo "$production" >"$slots/preprod/commit.txt"; fi
+        echo "commit=$preprod" >>"$GITHUB_OUTPUT"
+        echo "Production now runs \`${preprod:0:7}\`; preprod holds \`${production:0:7}\`" >>"$GITHUB_STEP_SUMMARY"

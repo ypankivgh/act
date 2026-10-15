@@ -1,8 +1,9 @@
 name: Shopify
 description: >-
-  "Deploys" one Shopify app: records in azure/shopify/<app>.json where it points and which commit
-  it ships. staging, preprod and prod point at fixed slots (their tomls are static); `pr` points at
-  whichever PR slot is passed in. Needs the _azure_ branch at azure/; save afterwards.
+  "Deploys" one Shopify app: records in azure/shopify/<app>.json where it points and which commit it
+  ships. For the `pr` app it first takes the PR slot's address (in the real thing, written into
+  shopify.app.pr.toml); staging, preprod and prod point at fixed slots, like their static tomls.
+  Needs the _azure_ branch at azure/; save afterwards.
 
 inputs:
   app:
@@ -18,11 +19,20 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: Point the pr app at this PR
+      if: inputs.app == 'pr'
+      shell: bash
+      env:
+        URL: ${{ inputs.url }}
+      run: |
+        [[ $URL =~ ^https://[a-z0-9./-]+$ ]] || { echo "::error::Unexpected URL '$URL'"; exit 1; }
+        echo "POINTS_AT=$URL" >>"$GITHUB_ENV"
+
+    - name: Deploy
+      shell: bash
       env:
         APP: ${{ inputs.app }}
         COMMIT: ${{ inputs.commit }}
-        URL: ${{ inputs.url }}
         PAGES: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
       run: |
         set -euo pipefail
@@ -30,8 +40,7 @@ runs:
           staging) url="$PAGES/staging/slots/production/" ;;
           preprod) url="$PAGES/prod/slots/preprod/" ;;
           prod)    url="$PAGES/prod/slots/production/" ;;
-          pr)      [[ $URL =~ ^https://[a-z0-9./-]+$ ]] || { echo "::error::pr needs a slot URL"; exit 1; }
-                   url=$URL ;;
+          pr)      url=$POINTS_AT ;;
           *)       echo "::error::Unknown app '$APP'"; exit 1 ;;
         esac
         mkdir -p azure/shopify
