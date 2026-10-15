@@ -1,4 +1,5 @@
 name: 4 · Release
+run-name: Release · ${{ inputs.ref }}
 
 # WHEN   you run it, from main. `ref` defaults to main; for a hotfix, name its branch.
 # DOES   check ref → build → deploy to prod's preprod slot → `preprod` Shopify app.

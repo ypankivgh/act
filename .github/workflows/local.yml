@@ -1,4 +1,5 @@
 name: 1 · Local
+run-name: Local · ${{ inputs.action }} ${{ inputs.name }}
 
 # WHEN   you run it
 # DOES   the data of slot <name> in staging, for running the apps on your machine:
