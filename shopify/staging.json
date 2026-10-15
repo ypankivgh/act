@@ -1,4 +1,6 @@
 {
   "app": "staging",
-  "pointsAt": null
+  "pointsAt": "https://ypankivgh.github.io/act/staging/slots/production/",
+  "commit": "fc4d6fb2622c40860bd53e15232e98710c022d65",
+  "deployedAt": "2026-10-15T21:29:15Z"
 }
