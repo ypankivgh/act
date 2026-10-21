@@ -1,0 +1,140 @@
+name: Manual Run - All Input Types
+
+on:
+  workflow_dispatch:
+    inputs:
+      # 1) string - free text field
+      release_name:
+        description: "Release name (string)"
+        required: true
+        type: string
+        default: "my-release"
+
+      # string without default, optional
+      notes:
+        description: "Optional notes (string, optional)"
+        required: false
+        type: string
+
+      # 2) number - numeric field (validated by the UI)
+      replicas:
+        description: "Number of replicas (number)"
+        required: true
+        type: number
+        default: 2
+
+      # 3) boolean - checkbox
+      dry_run:
+        description: "Dry run (boolean)"
+        required: false
+        type: boolean
+        default: true
+
+      # 4) choice - dropdown with fixed options
+      log_level:
+        description: "Log level (choice)"
+        required: true
+        type: choice
+        options:
+          - info
+          - debug
+          - warning
+          - error
+        default: info
+
+      # 5) environment - dropdown of environments defined in
+      #    Settings -> Environments of this repository
+      target_env:
+        description: "Target environment (environment)"
+        required: true
+        type: environment
+
+permissions:
+  contents: read
+
+run-name: "${{ inputs.release_name }} -> ${{ inputs.target_env }} (dry_run=${{ inputs.dry_run }})"
+
+jobs:
+  show-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print all inputs
+        env:
+          RELEASE_NAME: ${{ inputs.release_name }}
+          NOTES:        ${{ inputs.notes }}
+          REPLICAS:     ${{ inputs.replicas }}
+          DRY_RUN:      ${{ inputs.dry_run }}
+          LOG_LEVEL:    ${{ inputs.log_level }}
+          TARGET_ENV:   ${{ inputs.target_env }}
+        run: |
+          echo "release_name = $RELEASE_NAME"
+          echo "notes        = ${NOTES:-<empty>}"
+          echo "replicas     = $REPLICAS"
+          echo "dry_run      = $DRY_RUN"
+          echo "log_level    = $LOG_LEVEL"
+          echo "target_env   = $TARGET_ENV"
+
+          {
+            echo "### Manual run inputs"
+            echo "| Input | Type | Value |"
+            echo "|---|---|---|"
+            echo "| release_name | string | $RELEASE_NAME |"
+            echo "| notes | string | ${NOTES:-_empty_} |"
+            echo "| replicas | number | $REPLICAS |"
+            echo "| dry_run | boolean | $DRY_RUN |"
+            echo "| log_level | choice | $LOG_LEVEL |"
+            echo "| target_env | environment | $TARGET_ENV |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  use-types:
+    needs: show-inputs
+    runs-on: ubuntu-latest
+    steps:
+      # boolean: inputs.* keeps the real boolean type in expressions
+      - name: Only when NOT dry run
+        if: ${{ !inputs.dry_run }}
+        run: echo "Real run - changes will be applied"
+
+      - name: Only when dry run
+        if: ${{ inputs.dry_run }}
+        run: echo "Dry run - nothing will be changed"
+
+      # number: can be compared numerically in expressions
+      - name: Scale warning
+        if: ${{ inputs.replicas > 5 }}
+        run: echo "::warning::High replica count requested (${{ inputs.replicas }})"
+
+      # choice: compare with a string
+      - name: Debug details
+        if: ${{ inputs.log_level == 'debug' }}
+        run: |
+          echo "Debug mode enabled"
+          env | sort
+
+      # number in bash: loop over the value
+      - name: Simulate replicas
+        env:
+          REPLICAS: ${{ inputs.replicas }}
+        run: |
+          for i in $(seq 1 "$REPLICAS"); do
+            echo "Starting replica $i/$REPLICAS"
+          done
+
+  deploy:
+    needs: use-types
+    runs-on: ubuntu-latest
+    # environment: input plugs straight into the job's environment,
+    # so environment secrets, variables and protection rules apply
+    environment: ${{ inputs.target_env }}
+    steps:
+      - name: Dummy deploy
+        env:
+          RELEASE_NAME: ${{ inputs.release_name }}
+          TARGET_ENV:   ${{ inputs.target_env }}
+          DRY_RUN:      ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "[DRY RUN] Would deploy $RELEASE_NAME to $TARGET_ENV"
+          else
+            echo "Deploying $RELEASE_NAME to $TARGET_ENV"
+          fi
