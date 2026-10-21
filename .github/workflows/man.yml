@@ -5,7 +5,10 @@ on:
     inputs:
       # 1) string - free text field
       release_name:
-        description: "Release name (string)"
+        description: |
+          Release name (string)
+          second
+          third
         required: true
         type: string
         default: "my-release"
