@@ -9,6 +9,7 @@ on:
           Release name (string)
           second
           third
+          what if i am super long? how do to you discpaly men? hehe?
         required: true
         type: string
         default: "my-release"
