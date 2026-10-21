@@ -5,7 +5,7 @@ on:
     inputs:
       # 1) string - free text field
       release_name:
-        description: |
+        description: >
           Release name (string)
           second
           third
